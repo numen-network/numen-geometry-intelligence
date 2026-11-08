@@ -1,0 +1,40 @@
+services:
+  geometry:
+    build: .
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      NUMEN_PUBLIC_URL: https://${NUMEN_DOMAIN:?Set NUMEN_DOMAIN in .env}
+      NUMEN_CATALOG_DB: /app/data/numen-catalog.sqlite
+      NUMEN_GEOMETRY_CACHE: /app/cache
+      NUMEN_GRAPHQL_URL: https://graphql.numen-network.org/graphql
+      NUMEN_REQUEST_INTERVAL_MS: ${NUMEN_REQUEST_INTERVAL_MS:-2500}
+    volumes:
+      - geometry_data:/app/data
+      - geometry_cache:/app/cache
+    expose:
+      - "8000"
+    networks: [internal]
+    security_opt: [no-new-privileges:true]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      NUMEN_DOMAIN: ${NUMEN_DOMAIN:?Set NUMEN_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [geometry]
+    networks: [internal]
+networks:
+  internal:
+volumes:
+  geometry_data:
+  geometry_cache:
+  caddy_data:
+  caddy_config:

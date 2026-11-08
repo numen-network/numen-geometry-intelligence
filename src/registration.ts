@@ -1,0 +1,24 @@
+import type {Mesh} from './geometry.ts';
+type V=[number,number,number];
+const add=(a:V,b:V):V=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub=(a:V,b:V):V=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const dot=(a:V,b:V)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const sq=(a:V,b:V)=>dot(sub(a,b),sub(a,b));
+const centroid=(pts:V[]):V=>pts.reduce((a,p)=>add(a,[p[0]/pts.length,p[1]/pts.length,p[2]/pts.length]),[0,0,0] as V);
+function normalized(mesh:Mesh,max=256){const n=mesh.vertexCount;const pts:V[]=[];for(let i=0;i<n;i+=Math.max(1,Math.ceil(n/max)))pts.push([mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]]);const center=centroid(pts);const rms=Math.sqrt(pts.reduce((s,p)=>s+sq(p,center),0)/pts.length)||1;return {points:pts.map(p=>sub(p,center).map(x=>x/rms) as V),center,rms};}
+const perms=[[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+function transform(p:V,R:number[][],t:V):V{return [dot(R[0] as V,p)+t[0],dot(R[1] as V,p)+t[1],dot(R[2] as V,p)+t[2]];}
+function nearest(p:V,pts:V[]){let d=Infinity,idx=0;for(let i=0;i<pts.length;i++){const x=sq(p,pts[i]);if(x<d){d=x;idx=i;}}return {distance:Math.sqrt(d),idx};}
+function quantile(a:number[],p:number){const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor((s.length-1)*p))]??0;}
+function rigidFit(a:V[],b:V[]){const ca=centroid(a),cb=centroid(b);let [xx,xy,xz,yx,yy,yz,zx,zy,zz]=Array(9).fill(0) as number[];
+for(let i=0;i<a.length;i++){const p=sub(a[i],ca),q=sub(b[i],cb);xx+=p[0]*q[0];xy+=p[0]*q[1];xz+=p[0]*q[2];yx+=p[1]*q[0];yy+=p[1]*q[1];yz+=p[1]*q[2];zx+=p[2]*q[0];zy+=p[2]*q[1];zz+=p[2]*q[2];}
+const N=[[xx+yy+zz,yz-zy,zx-xz,xy-yx],[yz-zy,xx-yy-zz,xy+yx,zx+xz],[zx-xz,xy+yx,-xx+yy-zz,yz+zy],[xy-yx,zx+xz,yz+zy,-xx-yy+zz]];
+let q=[1,0,0,0];for(let k=0;k<65;k++){const v=N.map(row=>row.reduce((s,x,j)=>s+x*q[j],0));const m=Math.hypot(...v)||1;q=v.map(x=>x/m);}
+const [w,x,y,z]=q;const R=[[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w)],[2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)],[2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)]];
+const moved=transform(ca,R,[0,0,0]);return {R,t:sub(cb,moved)};}
+function runICP(A:V[],B:V[],initial:number[][],iterations=14){let transformed=A.map(p=>transform(p,initial,[0,0,0]));let R=initial,t:V=[0,0,0];let previous=Infinity;
+for(let i=0;i<iterations;i++){const hits=transformed.map(p=>nearest(p,B));const pairs=hits.map((h,j)=>({p:transformed[j],q:B[h.idx],d:h.distance})).sort((a,b)=>a.d-b.d).slice(0,Math.max(12,Math.floor(A.length*.85)));const fit=rigidFit(pairs.map(x=>x.p),pairs.map(x=>x.q));transformed=transformed.map(p=>transform(p,fit.R,fit.t));const next=transformed.reduce((s,p)=>s+nearest(p,B).distance,0)/transformed.length;if(Math.abs(previous-next)<1e-7)break;previous=next;
+const oldR=R;R=fit.R.map(row=>oldR[0].map((_,j)=>row.reduce((s,v,k)=>s+v*oldR[k][j],0)));t=transform(t,fit.R,fit.t);}
+const da=transformed.map(p=>nearest(p,B).distance),db=B.map(p=>nearest(p,transformed).distance);return {R,t,da,db,mean:(da.reduce((a,b)=>a+b,0)/da.length+db.reduce((a,b)=>a+b,0)/db.length)/2};}
+export function registerSurfaces(a:Mesh,b:Mesh){const aa=normalized(a),bb=normalized(b);let best:ReturnType<typeof runICP>|null=null;for(const perm of perms)for(let signs=0;signs<8;signs++){const R=[0,1,2].map((_,i)=>[0,1,2].map(j=>perm[i]===j?(signs&(1<<i)?-1:1):0));const determinant=R[0][0]*(R[1][1]*R[2][2]-R[1][2]*R[2][1])-R[0][1]*(R[1][0]*R[2][2]-R[1][2]*R[2][0])+R[0][2]*(R[1][0]*R[2][1]-R[1][1]*R[2][0]);if(determinant<0)continue;const candidate=runICP(aa.points,bb.points,R);if(!best||candidate.mean<best.mean)best=candidate;}
+if(!best)throw Error('Rigid registration failed');const distances=[...best.da,...best.db];const chamfer=best.mean,hausdorff=Math.max(...distances),p95=quantile(distances,.95);return {algorithm:'normalized-sampled-rigid-icp-v1',normalization:'centroid and RMS radius; ignores absolute scale',registration:{rotation:best.R,translation:best.t,iterationsMaximum:14,orientationStarts:24},distances:{symmetricChamfer:chamfer,approximateHausdorff:hausdorff,p95,median:quantile(distances,.5),unit:'normalized RMS radius',sampledA:best.da.length,sampledB:best.db.length},coverage:{aWithin005:best.da.filter(d=>d<=.05).length/best.da.length,bWithin005:best.db.filter(d=>d<=.05).length/best.db.length},heatmap:{modelA:{positions:aa.points,distances:best.da,center:aa.center,rms:aa.rms},modelB:{positions:bb.points,distances:best.db,center:bb.center,rms:bb.rms},legend:{low:0,high:p95}},limitations:['ICP can converge to a local minimum; multi-start axis orientations reduce but do not eliminate this risk.','Distances are sampled vertex-to-vertex, not exact continuous surface distances.','RMS normalization removes physical scale; native model units are unknown.','Heatmap values describe nearest sampled point differences, not certified manufacturing tolerances.','No trained semantic classification or certified partial part-to-whole recognition.'],identityVerified:false,provenanceVerified:false};}

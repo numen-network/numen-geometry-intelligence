@@ -1,0 +1,26 @@
+node_modules/
+cache/
+data/
+dist/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local databases
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Test coverage
+coverage/
+
+# System files
+.DS_Store
+Thumbs.db

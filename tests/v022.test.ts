@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {parseUploadedModel} from '../src/formats.ts';
+import {extractFeaturesV2,compareV2} from '../src/geometry-v2.ts';
+import {Metrics} from '../src/observability.ts';
+const obj='v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n';
+test('v2 OBJ import and identical shape score',()=>{const a=parseUploadedModel('obj',Buffer.from(obj)),f=extractFeaturesV2(a);assert.equal(a.faceCount,1);assert.equal(compareV2(f,f).distance,0);});
+test('binary STL import',()=>{const b=Buffer.alloc(134);b.writeUInt32LE(1,80);b.writeFloatLE(1,84+12+12);b.writeFloatLE(1,84+12+24+4);const m=parseUploadedModel('stl',b);assert.equal(m.faceCount,1);assert.equal(m.vertexCount,3);});
+test('unsupported format rejected',()=>assert.throws(()=>parseUploadedModel('exe',Buffer.from('x'))));
+test('metrics counters and errors',()=>{const m=new Metrics();m.record('/health',200,4);m.record('/bad',404,10);assert.equal(m.snapshot().errors,1);assert.equal(m.snapshot().requests,2);});

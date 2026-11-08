@@ -1,0 +1,19 @@
+{$NUMEN_DOMAIN} {
+    encode zstd gzip
+    @mcp path /mcp
+    @api path /api/* /objects/* /openapi.json /.well-known/openapi.json /llms.txt /robots.txt /health /docs /registry/status /recent
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        -Server
+    }
+    request_body {
+        max_size 64KB
+    }
+    reverse_proxy geometry:8000 {
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 60s
+        }
+    }
+}

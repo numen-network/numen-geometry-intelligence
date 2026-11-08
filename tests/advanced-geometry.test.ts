@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {analyzeAdvanced,compareAdvanced,partialCandidates} from '../src/advanced-geometry.ts';
+import type {Mesh} from '../src/geometry.ts';
+const tetra:Mesh={id:'tetra',protocol:'test',vertexCount:4,faceCount:4,vertices:new Float64Array([0,0,0,1,0,0,0,1,0,0,0,1]),faces:new Uint16Array([0,2,1,0,1,3,0,3,2,1,2,3])};
+test('closed tetrahedron has expected area, volume, topology and heatmap',()=>{const x=analyzeAdvanced(tetra);assert.ok(Math.abs(x.geometry.surfaceArea!-(1.5+Math.sqrt(3)/2))<1e-7);assert.ok(Math.abs(x.geometry.enclosedVolume!-1/6)<1e-7);assert.equal(x.topology.genus,0);assert.equal(x.topology.boundaryEdges,0);assert.equal(x.topology.connectedComponents,1);assert.equal(x.surface.detailMap.values.length,4);assert.ok(x.geometry.sphericity!>0)});
+test('open mesh volume is not claimed',()=>{const open={...tetra,faceCount:3,faces:tetra.faces.slice(0,9)};const x=analyzeAdvanced(open);assert.equal(x.geometry.enclosedVolume,null);assert.equal(x.topology.manifoldClosed,false)});
+test('comparison and partial candidates never claim identity proof',()=>{assert.equal(compareAdvanced(tetra,tetra).identityVerified,false);assert.equal(partialCandidates(tetra,tetra).verifiedPartialMatch,false)});
+test('surface detail map includes position for each sample and finite curvature',()=>{const x=analyzeAdvanced(tetra);assert.equal(x.surface.detailMap.positions.length,tetra.vertexCount);assert.equal(x.surface.gaussianCurvature.length,tetra.vertexCount);assert.ok(x.surface.gaussianCurvature.every(v=>typeof v==='number'&&Number.isFinite(v)))});
+test('normalized point-cloud candidate score is bounded and symmetric for identical mesh',()=>{const x=partialCandidates(tetra,tetra);assert.ok(x.candidateScore!==null&&x.candidateScore>0&&x.candidateScore<=1);assert.ok(x.coverageA!==null&&x.coverageA>0);assert.equal(x.verifiedPartialMatch,false)});
+test('semantic category remains unclassified without trained model',()=>{const x=analyzeAdvanced(tetra);assert.equal(x.classification.objectType,'unclassified');assert.equal(x.classification.semanticCategoryVerified,false)});

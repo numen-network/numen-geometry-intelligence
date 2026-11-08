@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {Registry,validateRegistration} from '../src/registry.ts';
+import {semanticFilters,semanticRank} from '../src/intelligence.ts';
+import {openApiSpec} from '../src/api-docs.ts';
+test('registered object import is explicitly unverified and persists',()=>{const dir=mkdtempSync(join(tmpdir(),'numen37-'));try{const db=new Registry(join(dir,'registry.sqlite'));const item=validateRegistration({id:'reg-1',name:'Sample',chainId:'32026',transactionHash:'0x123',contractAddress:'0xabc',owner:'0xdef',geometryHash:'abc'});assert.equal(item.verified,false);db.put(item);assert.equal(db.get('reg-1')?.name,'Sample');assert.equal(db.list(10,0,'Sample').total,1);db.close();}finally{rmSync(dir,{recursive:true,force:true})}});
+test('semantic keyword mapping does not pretend unsupported language is supported',()=>{assert.deepEqual(semanticFilters('irregular asteroid').predicates,['rough']);assert.equal(semanticFilters('find a chair').unsupported,true);assert.deepEqual(semanticRank('find a chair',[]).results,[])});
+test('new AI endpoints documented in OpenAPI',()=>{const paths=openApiSpec().paths;for(const path of ['/api/v1/registered','/api/v1/catalog/unified','/api/v1/semantic/search','/api/v1/geometry/intelligence','/api/v1/geometry/partial-compare'])assert.ok(path in paths)});
